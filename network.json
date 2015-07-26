@@ -148,6 +148,19 @@
         "TemplateURL" : "https://s3-us-west-2.amazonaws.com/nimbusscale-cfn/security-groups.json",
         "TimeoutInMinutes" : "2"
       }
+    },
+
+    "StackNatGw1" : {
+      "Type" : "AWS::CloudFormation::Stack",
+      "Properties" : {
+        "Parameters" : { "Prefix" : { "Ref" : "Prefix" },
+                         "VpcId" : { "Ref" : "VPC" },
+                         "SubnetIdPrivate1" : { "Ref" : "SubnetPrivate1" }, 
+                         "SubnetIdPrivate2" : { "Ref" : "SubnetPrivate2" } 
+                       },
+        "TemplateURL" : "https://s3-us-west-2.amazonaws.com/nimbusscale-cfn/nat.json",
+        "TimeoutInMinutes" : "2"
+      }
     }
   },
 
