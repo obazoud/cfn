@@ -1,0 +1,58 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+
+  "Description" : "Creates generic security groups",
+
+  "Parameters" : {
+    "Prefix" : {
+      "Default" : "CFN.",
+      "Description" : "The prefix for The names of all created resources",
+      "Type" : "String",
+      "MinLength" : "1",
+      "MaxLength" : "64",
+      "AllowedPattern" : "[a-zA-Z0-9][a-zA-Z0-9\\.\\-\\_]*",
+      "ConstraintDescription" : "must start with an alphanumeric character and contain alphanumeric characters and '.', '-' or '_'."
+    },
+    "VpcId" : {
+      "Description" : "The VPC which the security groups will belong",
+      "Type" : "AWS::EC2::VPC::Id"
+    }
+  },
+
+  "Resources" : { 
+    "SecurityGroupAllowSSHFromAny" : {
+      "Type" : "AWS::EC2::SecurityGroup",
+      "Properties" : { 
+        "GroupDescription" : "AllowSSHFromAny",
+        "SecurityGroupIngress" : [{
+          "IpProtocol" : "tcp",
+          "FromPort" : "22",
+          "ToPort" : "22",
+          "CidrIp" : "0.0.0.0/0"
+        }],
+        "VpcId" : { "Ref" : "VpcId" },
+        "Tags" : [ { "Key" : "Name",
+                     "Value" : { "Fn::Join" : [ "", [ { "Ref" : "Prefix" }, "SecurityGroup" ] ] }
+                   }
+                 ]
+      }
+    },
+    "SecurityGroupAllowHTTPFromAny" : {
+      "Type" : "AWS::EC2::SecurityGroup",
+      "Properties" : {
+        "GroupDescription" : "AllowHTTPFromAny",
+        "SecurityGroupIngress" : [{
+          "IpProtocol" : "tcp",
+          "FromPort" : "80",
+          "ToPort" : "80",
+          "CidrIp" : "0.0.0.0/0"
+        }],
+        "VpcId" : { "Ref" : "VpcId" },
+        "Tags" : [ { "Key" : "Name",
+                     "Value" : { "Fn::Join" : [ "", [ { "Ref" : "Prefix" }, "SecurityGroup" ] ] }
+                   }
+                 ]
+      }
+    }
+  }
+}

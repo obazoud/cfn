@@ -1,0 +1,173 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+
+  "Description" : "Creates VPC and related networking componets to support Multi-AZ apps",
+
+  "Resources" : { 
+    "VPC" : {
+      "Type" : "AWS::EC2::VPC",
+      "Properties" : {
+        "CidrBlock" : "10.0.0.0/16",
+        "EnableDnsHostnames" : true,
+        "Tags" : [ { "Key" : "Name", "Value" : "CFN.VPC" } ]
+      }
+    },
+  
+    "SubnetPublicA" : {
+      "Type" : "AWS::EC2::Subnet",
+      "Properties" : {
+        "AvailabilityZone" : "us-west-2a",
+        "CidrBlock" : "10.0.0.0/24",
+        "MapPublicIpOnLaunch" : true,
+        "Tags" : [ { "Key" : "Name", "Value" : "CFN.SubnetPublicA" } ],
+        "VpcId" : { "Ref" : "VPC" }
+      }
+    },
+
+    "SubnetPublicB" : {
+      "Type" : "AWS::EC2::Subnet",
+      "Properties" : {
+        "AvailabilityZone" : "us-west-2b",
+        "CidrBlock" : "10.0.1.0/24",
+        "MapPublicIpOnLaunch" : true,
+        "Tags" : [ { "Key" : "Name", "Value" : "CFN.SubnetPublicB" } ],
+        "VpcId" : { "Ref" : "VPC" }
+      }
+    },
+
+    "SubnetPrivateA" : {
+      "Type" : "AWS::EC2::Subnet",
+      "Properties" : {
+        "AvailabilityZone" : "us-west-2a",
+        "CidrBlock" : "10.0.100.0/24",
+        "MapPublicIpOnLaunch" : false,
+        "Tags" : [ { "Key" : "Name", "Value" : "CFN.SubnetPrivateA" } ],
+        "VpcId" : { "Ref" : "VPC" }
+      }
+    },
+
+    "SubnetPrivateB" : {
+      "Type" : "AWS::EC2::Subnet",
+      "Properties" : {
+        "AvailabilityZone" : "us-west-2b",
+        "CidrBlock" : "10.0.101.0/24",
+        "MapPublicIpOnLaunch" : false,
+        "Tags" : [ { "Key" : "Name", "Value" : "CFN.SubnetPrivateB" } ],
+        "VpcId" : { "Ref" : "VPC" }
+      }
+    },
+
+    "IGW" : {
+      "Type" : "AWS::EC2::InternetGateway",
+      "Properties" : {
+        "Tags" : [ { "Key" : "Name", "Value" : "CFN.IGW" } ]
+      }
+    },
+
+    "AttachIGW2VPC" : {
+      "Type" : "AWS::EC2::VPCGatewayAttachment",
+      "Properties" : {
+        "InternetGatewayId" : { "Ref" : "IGW" },
+        "VpcId" : { "Ref" : "VPC" }
+      }
+    },
+
+    "RoutingTableIGW" : {
+      "Type" : "AWS::EC2::RouteTable",
+      "Properties" : {
+        "VpcId" : { "Ref" : "VPC" },
+        "Tags" : [ { "Key" : "Name", "Value" : "CFN.RoutingTableIGW" } ]
+      }
+    },
+
+    "RouteDefault2IGW" : {
+      "Type" : "AWS::EC2::Route",
+      "Properties" : {
+        "DestinationCidrBlock" : "0.0.0.0/0",
+        "GatewayId" : { "Ref" : "IGW" },
+        "RouteTableId" : { "Ref" : "RoutingTableIGW" }
+      }
+    },
+
+    "AssociateIGWRoutingTable2SubnetPublicA" : {
+      "Type" : "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties" : {
+        "RouteTableId" : { "Ref" : "RoutingTableIGW" },
+        "SubnetId" : { "Ref" : "SubnetPublicA" }
+      }
+    },
+
+    "AssociateIGWRoutingTable2SubnetPublicB" : {
+      "Type" : "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties" : {
+        "RouteTableId" : { "Ref" : "RoutingTableIGW" },
+        "SubnetId" : { "Ref" : "SubnetPublicB" }
+      }
+    },
+
+    "NATGW" : {
+      "Type" : "AWS::EC2::Instance",
+      "Properties" : {
+        "AvailabilityZone" : "us-west-2a",
+        "ImageId" : "ami-69ae8259",
+        "InstanceType" : "t2.micro",
+        "KeyName" : "jjk3@nimbusscale",
+        "SourceDestCheck" : false,
+        "SecurityGroupIds" : [ { "Fn::GetAtt" : [ "SecurityGroupAllowSSHFromAny", "GroupId" ] },
+                               { "Fn::GetAtt" : [ "VPC", "DefaultSecurityGroup" ] } ],
+        "SubnetId" : { "Ref" : "SubnetPublicA" },
+        "Tags" : [ { "Key" : "Name", "Value" : "CFN.NATGW" } ]
+      }
+    },
+
+    "RoutingTableNAT" : {
+      "Type" : "AWS::EC2::RouteTable",
+      "Properties" : {
+        "VpcId" : { "Ref" : "VPC" },
+        "Tags" : [ { "Key" : "Name", "Value" : "CFN.RoutingTableNAT" } ]
+      }
+    },
+
+    "RouteDefault2NAT" : {
+      "Type" : "AWS::EC2::Route",
+      "Properties" : {
+        "DestinationCidrBlock" : "0.0.0.0/0",
+        "InstanceId" : { "Ref" : "NATGW" },
+        "RouteTableId" : { "Ref" : "RoutingTableNAT" }
+      }
+    },
+
+    "AssociateNATRoutingTable2SubnetPrivateA" : {
+      "Type" : "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties" : {
+        "RouteTableId" : { "Ref" : "RoutingTableNAT" },
+        "SubnetId" : { "Ref" : "SubnetPrivateA" }
+      }
+    },
+
+    "AssociateNATRoutingTable2SubnetPrivateB" : {
+      "Type" : "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties" : {
+        "RouteTableId" : { "Ref" : "RoutingTableNAT" },
+        "SubnetId" : { "Ref" : "SubnetPrivateB" }
+      }
+    },
+
+    "SecurityGroupAllowSSHFromAny" : {
+      "Type" : "AWS::EC2::SecurityGroup",
+      "Properties" : { 
+        "GroupDescription" : "AllowSSHFromAny",
+        "SecurityGroupIngress" : [{
+          "IpProtocol" : "tcp",
+          "FromPort" : "22",
+          "ToPort" : "22",
+          "CidrIp" : "0.0.0.0/0"
+        }],
+        "Tags" : [ { "Key" : "Name", "Value" : "CFN.SecurityGroup" } ],
+        "VpcId" : { "Ref" : "VPC" }
+      }
+    }
+  }
+}
+
+        

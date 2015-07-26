@@ -5,15 +5,16 @@
 
   "Parameters" : {
     "Prefix" : {
-      "Default": "CFN.",
+      "Default" : "CFN.",
       "Description" : "The prefix for The names of all created resources",
-      "Type": "String",
-      "MinLength": "1",
-      "MaxLength": "64",
+      "Type" : "String",
+      "MinLength" : "1",
+      "MaxLength" : "64",
       "AllowedPattern" : "[a-zA-Z0-9][a-zA-Z0-9\\.\\-\\_]*",
       "ConstraintDescription" : "must start with an alphanumeric character and contain alphanumeric characters and '.', '-' or '_'."
     }
   },
+
 
   "Resources" : { 
     "VPC" : {
@@ -31,7 +32,7 @@
     "SubnetPublic1" : {
       "Type" : "AWS::EC2::Subnet",
       "Properties" : {
-        "AvailabilityZone" : "us-west-2a",
+        "AvailabilityZone" : { "Fn::Select" : [ "0", { "Fn::GetAZs" : "" } ] },
         "CidrBlock" : "10.0.0.0/24",
         "MapPublicIpOnLaunch" : true,
         "VpcId" : { "Ref" : "VPC" },
@@ -45,7 +46,7 @@
     "SubnetPublic2" : {
       "Type" : "AWS::EC2::Subnet",
       "Properties" : {
-        "AvailabilityZone" : "us-west-2b",
+        "AvailabilityZone" : { "Fn::Select" : [ "1", { "Fn::GetAZs" : "" } ] },
         "CidrBlock" : "10.0.1.0/24",
         "MapPublicIpOnLaunch" : true,
         "VpcId" : { "Ref" : "VPC" },
@@ -59,7 +60,7 @@
     "SubnetPrivate1" : {
       "Type" : "AWS::EC2::Subnet",
       "Properties" : {
-        "AvailabilityZone" : "us-west-2a",
+        "AvailabilityZone" : { "Fn::Select" : [ "0", { "Fn::GetAZs" : "" } ] },
         "CidrBlock" : "10.0.100.0/24",
         "MapPublicIpOnLaunch" : false,
         "VpcId" : { "Ref" : "VPC" },
@@ -73,7 +74,7 @@
     "SubnetPrivate2" : {
       "Type" : "AWS::EC2::Subnet",
       "Properties" : {
-        "AvailabilityZone" : "us-west-2b",
+        "AvailabilityZone" : { "Fn::Select" : [ "1", { "Fn::GetAZs" : "" } ] },
         "CidrBlock" : "10.0.101.0/24",
         "MapPublicIpOnLaunch" : false,
         "VpcId" : { "Ref" : "VPC" },
@@ -136,6 +137,24 @@
         "RouteTableId" : { "Ref" : "RoutingTableIGW" },
         "SubnetId" : { "Ref" : "SubnetPublic2" }
       }
+    },
+
+    "SecurityGroups" : {
+      "Type" : "AWS::CloudFormation::Stack",
+      "Properties" : {
+        "Parameters" : { "Prefix" : { "Ref" : "Prefix" },
+                         "VpcId" : { "Ref" : "VPC" }
+                       },
+        "TemplateURL" : "https://s3-us-west-2.amazonaws.com/nimbusscale-cfn/security-groups.json",
+        "TimeoutInMinutes" : "2"
+      }
+    }
+  },
+
+  "Outputs" : {
+    "Prefix" : {
+      "Value" : { "Ref" : "Prefix" },
+      "Description" : "Naming Prefix"
     }
   }
 }
