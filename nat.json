@@ -134,22 +134,17 @@
       }
     },
 
-    "InstanceNatGw1" : {
-      "Type" : "AWS::EC2::Instance",
+    "LaunchConfigurationNatGw" : {
+      "Type" : "AWS::AutoScaling::LaunchConfiguration",
       "Properties" : {
         "IamInstanceProfile" : { "Ref" : "InstanceProfileNatGw" },
         "ImageId" : "ami-69ae8259",
         "InstanceType" : "t2.micro",
         "KeyName" : "jjk3@nimbusscale",
-        "SubnetId" : { "Ref" : "SubnetIdPublic1" },
-        "Tags" : [ { "Key" : "Name",
-                     "Value" : { "Fn::Join" : [ "", [ { "Ref" : "Prefix" }, "InstanceNatGw1" ] ] }
-                   }
-                 ],
         "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
                         "#!/bin/bash\n",
-                        "/usr/bin/aws ec2 attach-network-interface --region ", { "Ref" : "AWS::Region" }, 
-                                                                 " --network-interface-id ", { "Ref" : "NetworkInterfaceNatGw1" }, 
+                        "/usr/bin/aws ec2 attach-network-interface --region ", { "Ref" : "AWS::Region" },
+                                                                 " --network-interface-id ", { "Ref" : "NetworkInterfaceNatGw1" },
                                                                  " --instance-id $(curl -s http://169.254.169.254/latest/meta-data/instance-id)",
                                                                  " --device-index 1\n",
                         "sleep 30\n",
@@ -157,11 +152,24 @@
                         "iptables -t nat -A POSTROUTING -j MASQUERADE\n",
                         "iptables -A FORWARD -j ACCEPT\n",
                         "echo 1 > /proc/sys/net/ipv4/ip_forward\n"
-                      ]]}}  
+                      ]]}}
+        }
+      },
+    
+    "AutoScalingGroupNatGw" : {
+      "Type" : "AWS::AutoScaling::AutoScalingGroup",
+      "Properties" : {
+        "LaunchConfigurationName" : { "Ref" : "LaunchConfigurationNatGw" },
+        "MaxSize" : "1",
+        "MinSize" : "1",
+        "VPCZoneIdentifier" : [ { "Ref" : "SubnetIdPublic1" } ],
+        "Tags" : [ { "Key" : "Name",
+                     "Value" : { "Fn::Join" : [ "", [ { "Ref" : "Prefix" }, "NatGw1" ] ] },
+                     "PropagateAtLaunch" : "true"
+                   }
+                 ]
         },
         "DependsOn" : "NetworkInterfaceNatGw1"
       }
-
   }
 }
-
