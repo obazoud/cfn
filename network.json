@@ -155,6 +155,7 @@
       "Properties" : {
         "Parameters" : { "Prefix" : { "Ref" : "Prefix" },
                          "VpcId" : { "Ref" : "VPC" },
+                         "SubnetIdPublic1" : { "Ref" : "SubnetPublic1" },
                          "SubnetIdPrivate1" : { "Ref" : "SubnetPrivate1" }, 
                          "SubnetIdPrivate2" : { "Ref" : "SubnetPrivate2" } 
                        },
