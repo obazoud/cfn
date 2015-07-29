@@ -13,15 +13,22 @@
       "AllowedPattern" : "[a-zA-Z0-9][a-zA-Z0-9\\.\\-\\_]*",
       "ConstraintDescription" : "must start with an alphanumeric character and contain alphanumeric characters and '.', '-' or '_'."
     },
+
     "VpcIpPrefix" : {
-      "Default": "10.0",
+      "Default" : "10.0",
       "Description" : "The first two octets, without the trailing dot, that will be used as the IP Prefix for the subnets created in the VPC.",
       "Type" : "String",
       "MinLength" : "3",
       "MaxLength" : "7",
       "AllowedPattern" : "[0-9]{1,3}\\.[0-9]{1,3}",
       "ConstraintDescription" : "Must be the first two octets of an IP address."
-    }
+    },
+
+    "TemplateBucket" : {
+      "Description" : "Name of the S3 bucket that contains the templates for the nested stacks",
+      "Type" : "String"
+    }     
+
   },
 
   "Mappings" : {
@@ -163,7 +170,10 @@
         "Parameters" : { "Prefix" : { "Ref" : "Prefix" },
                          "VpcId" : { "Ref" : "VPC" }
                        },
-        "TemplateURL" : "https://s3-us-west-2.amazonaws.com/nimbusscale-cfn/security-groups.json",
+        "TemplateURL" : { "Fn::Join" : [ "", [
+                                        "https://s3-", { "Ref" : "AWS::Region" }, ".amazonaws.com/",
+                                        { "Ref" : "TemplateBucket" }, "/security-groups.json"
+                                       ] ] },
         "TimeoutInMinutes" : "2"
       }
     },
@@ -174,10 +184,15 @@
         "Parameters" : { "Prefix" : { "Ref" : "Prefix" },
                          "VpcId" : { "Ref" : "VPC" },
                          "SubnetIdPublic1" : { "Ref" : "SubnetPublic1" },
-                         "SubnetIdPrivate1" : { "Ref" : "SubnetPrivate1" },
-                         "SubnetIdPrivate2" : { "Ref" : "SubnetPrivate2" }
+                         "PrivateSubnetIds" : { "Fn::Join" : [ ",", 
+                                                        [ { "Ref" : "SubnetPrivate1" }, 
+                                                        { "Ref" : "SubnetPrivate2" } ] 
+                                                        ] }
                        },
-        "TemplateURL" : "https://s3-us-west-2.amazonaws.com/nimbusscale-cfn/nat.json",
+        "TemplateURL" : { "Fn::Join" : [ "", [
+                                        "https://s3-", { "Ref" : "AWS::Region" }, ".amazonaws.com/",
+                                        { "Ref" : "TemplateBucket" }, "/nat.json"
+                                       ] ] },
         "TimeoutInMinutes" : "2"
       }
     }

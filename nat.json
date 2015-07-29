@@ -31,14 +31,9 @@
       "Type" : "AWS::EC2::Subnet::Id"
     },
 
-    "SubnetIdPrivate1" : {
-      "Description" : "The SubnetId for the first private subnet",
-      "Type" : "AWS::EC2::Subnet::Id"
-    },
-    
-    "SubnetIdPrivate2" : {
-      "Description" : "The SubnetId for the second private subnet",
-      "Type" : "AWS::EC2::Subnet::Id"
+    "PrivateSubnetIds" : {
+      "Description" : "a list of the two private subnets",
+      "Type" : "List<AWS::EC2::Subnet::Id>"
     }
   },
 
@@ -109,7 +104,7 @@
       "Type" : "AWS::EC2::SubnetRouteTableAssociation",
       "Properties" : {
         "RouteTableId" : { "Ref" : "RouteTableNatGw1" },
-        "SubnetId" : { "Ref" : "SubnetIdPrivate1" }
+        "SubnetId" : { "Fn::Select" : [ "0" , { "Ref" : "PrivateSubnetIds" } ] }
       }
     },
 
@@ -117,7 +112,7 @@
       "Type" : "AWS::EC2::SubnetRouteTableAssociation",
       "Properties" : {
         "RouteTableId" : { "Ref" : "RouteTableNatGw1" },
-        "SubnetId" : { "Ref" : "SubnetIdPrivate2" }
+        "SubnetId" : { "Fn::Select" : [ "1" , { "Ref" : "PrivateSubnetIds" } ] }
       }
     },
 
