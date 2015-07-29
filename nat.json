@@ -14,6 +14,13 @@
       "ConstraintDescription" : "must start with an alphanumeric character and contain alphanumeric characters and '.', '-' or '_'."
     },
 
+  "InstanceType" : {
+    "Default" : "t2.micro",
+    "Description" : "The instance type for the NatGw",
+    "Type" : "String",
+    "AllowedValues" : ["t2.micro","t2.small","t2.medium","t2.large","m4.large","m4.xlarge","m4.2xlarge","m4.4xlarge","m4.10xlarge","m3.medium","m3.large","m3.xlarge","m3.2xlarge"]
+    },
+
    "VpcId" : {
       "Description" : "The VPC which the security groups will belong",
       "Type" : "AWS::EC2::VPC::Id"
@@ -32,6 +39,20 @@
     "SubnetIdPrivate2" : {
       "Description" : "The SubnetId for the second private subnet",
       "Type" : "AWS::EC2::Subnet::Id"
+    }
+  },
+
+  "Mappings" : { 
+    "NatGwImageId" : {
+      "ap-northeast-1" :   { "ImageId" : "ami-03cf3903" } ,
+      "ap-southeast-1" :   { "ImageId" : "ami-b49dace6" } ,
+      "ap-southeast-2" :   { "ImageId" : "ami-e7ee9edd" } ,
+      "eu-central-1" :     { "ImageId" : "ami-46073a5b" } ,
+      "eu-west-1" :        { "ImageId" : "ami-6975eb1e" } ,
+      "sa-east-1" :        { "ImageId" : "ami-fbfa41e6" } ,
+      "us-east-1" :        { "ImageId" : "ami-303b1458" } ,
+      "us-west-1" :        { "ImageId" : "ami-7da94839" } ,
+      "us-west-2" :        { "ImageId" : "ami-69ae8259" } 
     }
   },
 
@@ -138,8 +159,8 @@
       "Type" : "AWS::AutoScaling::LaunchConfiguration",
       "Properties" : {
         "IamInstanceProfile" : { "Ref" : "InstanceProfileNatGw" },
-        "ImageId" : "ami-69ae8259",
-        "InstanceType" : "t2.micro",
+        "ImageId" : { "Fn::FindInMap" : [ "NatGwImageId" , { "Ref" : "AWS::Region" }, "ImageId" ] }, 
+        "InstanceType" : { "Ref" : "InstanceType" },
         "KeyName" : "jjk3@nimbusscale",
         "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
                         "#!/bin/bash\n",
