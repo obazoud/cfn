@@ -27,19 +27,39 @@
     "TemplateBucket" : {
       "Description" : "Name of the S3 bucket that contains the templates for the nested stacks",
       "Type" : "String"
-    }     
+    },
 
+    "NatStrategy" : {
+      "Default" : "single",
+      "Description" : "Determines if a single NatGW will be used for both private subnets or each private subnet will het it's own NatGW using dual NatGws. Additionally none can be specifiec and the NatGws and related subnets will not be created.",
+      "Type" : "String",
+      "AllowedValues" : [ "none","single","dual" ],
+      "ConstraintDescription" : "Must be either single, for 1 NatGw, or dual, for 2 NatGws."
+    },
+
+    "KeyName" : { 
+      "Default" : "",
+      "Description" : "Name of an SSH keypair which will be used for network related instances, such as NatGws and VpnGws. If one is not specified than the instances will be launched without one (i.e. No SSH access).",
+      "Type" : "String",
+      "MaxLength" : "255"
+    }     
   },
 
   "Mappings" : {
     "subnetting" : {
-        "VPC" :      { "subnet" : "0.0/16" },
-        "Public1" :  { "subnet" : "0.0/24" },
-        "Public2" :  { "subnet" : "1.0/24" },
-        "Private1" : { "subnet" : "100.0/24" },
-        "Private2" : { "subnet" : "101.0/24" }
+        "VPC" :         { "subnet" : "0.0/16" },
+        "Public1" :     { "subnet" : "0.0/24" },
+        "Public2" :     { "subnet" : "1.0/24" },
+        "Nat1" :        { "subnet" : "100.0/24" },
+        "Nat2" :        { "subnet" : "101.0/24" },
+        "Private1" :    { "subnet" : "200.0/24" },
+        "Private2" :    { "subnet" : "201.0/24" }
     }
   },
+
+  "Conditions" : {
+    "DeployNat" : { "Fn::Not" : [ { "Fn::Equals" : [ { "Ref" : "NatStrategy" }, "none" ] } ] }
+  },  
 
   "Resources" : { 
     "VPC" : {
@@ -77,6 +97,36 @@
         "VpcId" : { "Ref" : "VPC" },
         "Tags" : [ { "Key" : "Name",
                      "Value" : { "Fn::Join" : [ "", [ { "Ref" : "Prefix" }, "SubnetPublic2" ] ] }
+                   }
+                 ]
+      }
+    },
+
+    "SubnetNat1" : {
+      "Type" : "AWS::EC2::Subnet",
+      "Condition" : "DeployNat",
+      "Properties" : {
+        "AvailabilityZone" : { "Fn::Select" : [ "0", { "Fn::GetAZs" : "" } ] },
+        "CidrBlock" :  { "Fn::Join" : [ ".", [ { "Ref" : "VpcIpPrefix" } , { "Fn::FindInMap" : [ "subnetting", "Nat1", "subnet" ] } ] ]  },
+        "MapPublicIpOnLaunch" : false,
+        "VpcId" : { "Ref" : "VPC" },
+        "Tags" : [ { "Key" : "Name",
+                     "Value" : { "Fn::Join" : [ "", [ { "Ref" : "Prefix" }, "SubnetNat1" ] ] }
+                   }
+                 ]
+      }
+    },
+
+    "SubnetNat2" : {
+      "Type" : "AWS::EC2::Subnet",
+      "Condition" : "DeployNat",
+      "Properties" : {
+        "AvailabilityZone" : { "Fn::Select" : [ "1", { "Fn::GetAZs" : "" } ] },
+        "CidrBlock" :  { "Fn::Join" : [ ".", [ { "Ref" : "VpcIpPrefix" } , { "Fn::FindInMap" : [ "subnetting", "Nat2", "subnet" ] } ] ]  },
+        "MapPublicIpOnLaunch" : false,
+        "VpcId" : { "Ref" : "VPC" },
+        "Tags" : [ { "Key" : "Name",
+                     "Value" : { "Fn::Join" : [ "", [ { "Ref" : "Prefix" }, "SubnetNat2" ] ] }
                    }
                  ]
       }
@@ -164,6 +214,33 @@
       }
     },
 
+    "RouteTablePrivate" : {
+      "Type" : "AWS::EC2::RouteTable",
+      "Properties" : {
+        "VpcId" : { "Ref" : "VPC" },
+        "Tags" : [ { "Key" : "Name",
+                     "Value" : { "Fn::Join" : [ "", [ { "Ref" : "Prefix" }, "RouteTablePrivate" ] ] }
+                   }
+                 ]
+      }
+    },
+
+    "SubnetRouteTableAssociationRouteTablePrivateToSubnetPrivate1" : {
+      "Type" : "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties" : {
+        "RouteTableId" : { "Ref" : "RouteTablePrivate" },
+        "SubnetId" : { "Ref" : "SubnetPrivate1" }
+      }
+    },
+
+    "SubnetRouteTableAssociationRouteTablePrivateToSubnetPrivate2" : {
+      "Type" : "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties" : {
+        "RouteTableId" : { "Ref" : "RouteTablePrivate" },
+        "SubnetId" : { "Ref" : "SubnetPrivate2" }
+      }
+    },
+
     "StackSecurityGroups" : {
       "Type" : "AWS::CloudFormation::Stack",
       "Properties" : {
@@ -178,16 +255,22 @@
       }
     },
 
-    "StackNatGw1" : {
+    "StackNatGw" : {
       "Type" : "AWS::CloudFormation::Stack",
+      "Condition" : "DeployNat",
       "Properties" : {
         "Parameters" : { "Prefix" : { "Ref" : "Prefix" },
                          "VpcId" : { "Ref" : "VPC" },
-                         "SubnetIdPublic1" : { "Ref" : "SubnetPublic1" },
-                         "PrivateSubnetIds" : { "Fn::Join" : [ ",", 
-                                                        [ { "Ref" : "SubnetPrivate1" }, 
-                                                        { "Ref" : "SubnetPrivate2" } ] 
-                                                        ] }
+                         "PublicSubnetIds" : { "Fn::Join" : [ ",",
+                                                        [ { "Ref" : "SubnetPublic1" },
+                                                        { "Ref" : "SubnetPublic2" } ]
+                                                        ] },
+                         "NatSubnetIds" : { "Fn::Join" : [ ",", 
+                                                        [ { "Ref" : "SubnetNat1" }, 
+                                                        { "Ref" : "SubnetNat2" } ] 
+                                                        ] },
+                         "NatStrategy" : { "Ref" : "NatStrategy" },
+                         "KeyName" : { "Ref": "KeyName" }
                        },
         "TemplateURL" : { "Fn::Join" : [ "", [
                                         "https://s3-", { "Ref" : "AWS::Region" }, ".amazonaws.com/",

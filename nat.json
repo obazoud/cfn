@@ -18,7 +18,7 @@
     "Default" : "t2.micro",
     "Description" : "The instance type for the NatGw",
     "Type" : "String",
-    "AllowedValues" : ["t2.micro","t2.small","t2.medium","t2.large","m4.large","m4.xlarge","m4.2xlarge","m4.4xlarge","m4.10xlarge","m3.medium","m3.large","m3.xlarge","m3.2xlarge"]
+    "AllowedValues" : [ "t2.micro","t2.small","t2.medium","t2.large","m4.large","m4.xlarge","m4.2xlarge","m4.4xlarge","m4.10xlarge","m3.medium","m3.large","m3.xlarge","m3.2xlarge" ]
     },
 
    "VpcId" : {
@@ -26,14 +26,29 @@
       "Type" : "AWS::EC2::VPC::Id"
     },
 
-    "SubnetIdPublic1" : {
-      "Description" : "The SubnetId for the NatGw1",
-      "Type" : "AWS::EC2::Subnet::Id"
+    "NatStrategy" : {
+      "Default" : "single",
+      "Description" : "Determines if a single NatGW will be used for both private subnets or each private subnet will het it's own NatGW using  dual NatGws.",
+      "Type" : "String",
+      "AllowedValues" : [ "single","dual" ],
+      "ConstraintDescription" : "Must be either single, for 1 NatGw, or dual, for 2 NatGws."
     },
 
-    "PrivateSubnetIds" : {
+    "PublicSubnetIds" : {
+      "Description" : "a list of one or  two public subnets depending on the NAT strategy",
+      "Type" : "List<AWS::EC2::Subnet::Id>"
+    },
+
+    "NatSubnetIds" : {
       "Description" : "a list of the two private subnets",
       "Type" : "List<AWS::EC2::Subnet::Id>"
+    },
+
+    "KeyName" : {
+      "Default" : "",
+      "Description" : "Name of an SSH keypair which will be used for network related instances, such as NatGws and VpnGws. If one is not specified than the instances will be launched without one (i.e. No SSH access).",
+      "Type" : "String",
+      "MaxLength" : "255"
     }
   },
 
@@ -51,9 +66,22 @@
     }
   },
 
+  "Conditions" : {
+    "DualNatGws" : { "Fn::Equals" : [ { "Ref" : "NatStrategy" }, "dual" ] },
+    "UseSSHKey" : { "Fn::Not" : [ { "Fn::Equals" : [ { "Ref" : "KeyName" }, "" ] } ] }
+  },
+
   "Resources" : {
     "EipNatGw1" : {
       "Type" : "AWS::EC2::EIP",
+      "Properties" : {
+        "Domain" : "vpc"
+      }
+    },
+
+    "EipNatGw2" : {
+      "Type" : "AWS::EC2::EIP",
+      "Condition" : "DualNatGws",
       "Properties" : {
         "Domain" : "vpc"
       }
@@ -64,7 +92,7 @@
       "Properties" : {
         "Description" : "Attached to NAT GW Instance to provide consistant instance for routing",
         "SourceDestCheck" : false,
-        "SubnetId" : { "Ref" : "SubnetIdPublic1" },
+        "SubnetId" : { "Fn::Select" : [ "0" , { "Ref" : "PublicSubnetIds" } ] },
         "Tags" : [ { "Key" : "Name",
                      "Value" : { "Fn::Join" : [ "", [ { "Ref" : "Prefix" }, "NetworkInterfaceNatGw1" ] ] }
                      }
@@ -72,11 +100,35 @@
         }
     },
 
+    "NetworkInterfaceNatGw2" : {
+      "Type" : "AWS::EC2::NetworkInterface",
+      "Condition" : "DualNatGws",
+      "Properties" : {
+        "Description" : "Attached to NAT GW Instance to provide consistant instance for routing",
+        "SourceDestCheck" : false,
+        "SubnetId" : { "Fn::Select" : [ "1" , { "Ref" : "PublicSubnetIds" } ] },
+        "Tags" : [ { "Key" : "Name",
+                     "Value" : { "Fn::Join" : [ "", [ { "Ref" : "Prefix" }, "NetworkInterfaceNatGw2" ] ] }
+                     }
+                 ]
+        }
+    },
+
+
     "EIPAssociationEipNatGw1toNetworkInterfaceNatGw1" : {
       "Type" : "AWS::EC2::EIPAssociation",
       "Properties" : {
         "AllocationId" : { "Fn::GetAtt" : [ "EipNatGw1", "AllocationId" ] },
         "NetworkInterfaceId" : { "Ref" : "NetworkInterfaceNatGw1" }
+      }
+    },
+
+    "EIPAssociationEipNatGw2toNetworkInterfaceNatGw2" : {
+      "Type" : "AWS::EC2::EIPAssociation",
+      "Condition" : "DualNatGws",
+      "Properties" : {
+        "AllocationId" : { "Fn::GetAtt" : [ "EipNatGw2", "AllocationId" ] },
+        "NetworkInterfaceId" : { "Ref" : "NetworkInterfaceNatGw2" }
       }
     },
 
@@ -91,6 +143,18 @@
         }
       },
 
+    "RouteTableNatGw2" : {
+      "Type" : "AWS::EC2::RouteTable",
+      "Condition" : "DualNatGws",
+      "Properties" : {
+        "VpcId" : { "Ref" : "VpcId" },
+        "Tags" : [ { "Key" : "Name",
+                     "Value" : { "Fn::Join" : [ "", [ { "Ref" : "Prefix" }, "RouteTableNatGw2" ] ] }
+                     }
+                 ]
+        }
+      },
+
     "RouteNatGw1" : { 
       "Type" : "AWS::EC2::Route",
       "Properties" : { 
@@ -100,19 +164,32 @@
       }
     },
 
-    "SubnetRouteTableAssociationRouteTableNatGw1toSubnetPrivate1" : {
-      "Type" : "AWS::EC2::SubnetRouteTableAssociation",
+    "RouteNatGw2" : {
+      "Type" : "AWS::EC2::Route",
+      "Condition" : "DualNatGws",
       "Properties" : {
-        "RouteTableId" : { "Ref" : "RouteTableNatGw1" },
-        "SubnetId" : { "Fn::Select" : [ "0" , { "Ref" : "PrivateSubnetIds" } ] }
+        "DestinationCidrBlock" : "0.0.0.0/0",
+        "NetworkInterfaceId" : { "Ref" : "NetworkInterfaceNatGw2" },
+        "RouteTableId" : { "Ref" : "RouteTableNatGw2" }
       }
     },
 
-    "SubnetRouteTableAssociationRouteTableNatGw1toSubnetPrivate2" : {
+    "SubnetRouteTableAssociationRouteTableNatGw1toSubnetNat1" : {
       "Type" : "AWS::EC2::SubnetRouteTableAssociation",
       "Properties" : {
         "RouteTableId" : { "Ref" : "RouteTableNatGw1" },
-        "SubnetId" : { "Fn::Select" : [ "1" , { "Ref" : "PrivateSubnetIds" } ] }
+        "SubnetId" : { "Fn::Select" : [ "0" , { "Ref" : "NatSubnetIds" } ] }
+      }
+    },
+
+    "SubnetRouteTableAssociationRouteTableNatGw1toSubnetNat2" : {
+      "Type" : "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties" : {
+        "RouteTableId" : { "Fn::If" : [ "DualNatGws",
+                                        { "Ref" : "RouteTableNatGw2" },
+                                        { "Ref" : "RouteTableNatGw1" }
+                                      ] }, 
+        "SubnetId" : { "Fn::Select" : [ "1" , { "Ref" : "NatSubnetIds" } ] }
       }
     },
 
@@ -134,7 +211,7 @@
             "Version": "2012-10-17",
             "Statement": [ {
               "Effect": "Allow",
-              "Action": "ec2:AttachNetworkInterface",
+              "Action": [ "ec2:AttachNetworkInterface", "cloudwatch:PutMetricData" ],
               "Resource": "*"
             } ] 
           }
@@ -150,35 +227,234 @@
       }
     },
 
-    "LaunchConfigurationNatGw" : {
+    "LaunchConfigurationNatGw1" : {
       "Type" : "AWS::AutoScaling::LaunchConfiguration",
+      "Metadata" : {
+        "AWS::CloudFormation::Init" : {
+          "configSets" : {
+            "NatGwConfig" : [ "install_cfn", "NetworkInterfaceConfig", "CloudWatch" ],
+            "Update" : [ "CloudWatch" ]
+          },
+          "install_cfn" : {
+            "files": {
+              "/etc/cfn/cfn-hup.conf": {
+                "content": { "Fn::Join": [ "", [
+                  "[main]\n",
+                  "stack=", { "Ref": "AWS::StackId" }, "\n",
+                  "region=", { "Ref": "AWS::Region" }, "\n"
+                ]]},
+                "mode"  : "000400",
+                "owner" : "root",
+                "group" : "root"
+              },
+              "/etc/cfn/hooks.d/cfn-auto-reloader.conf": {
+                "content": { "Fn::Join": [ "", [
+                  "[cfn-auto-reloader-hook]\n",
+                  "triggers=post.update\n",
+                  "path=Resources.LaunchConfigurationNatGw1.Metadata.AWS::CloudFormation::Init\n",
+                  "action=/opt/aws/bin/cfn-init -v ",
+                          "         --stack ", { "Ref" : "AWS::StackName" },
+                          "         --resource LaunchConfigurationNatGw1 ",
+                          "         --configsets Update ",
+                          "         --region ", { "Ref" : "AWS::Region" }, "\n"
+                ]]},          
+                "mode"  : "000400",
+                "owner" : "root",
+                "group" : "root"
+              }
+            },
+            "services" : {
+              "sysvinit" : {
+                "cfn-hup" : { "enabled" : "true", "ensureRunning" : "true",
+                              "files" : ["/etc/cfn/cfn-hup.conf", "/etc/cfn/hooks.d/cfn-auto-reloader.conf"]}
+              }
+            }
+          },
+          "NetworkInterfaceConfig" : {
+            "commands" : {
+              "10_AttachNetworkInterface" : {
+                "command" : { "Fn::Join" : ["", [ "/usr/bin/aws ec2 attach-network-interface --region ", { "Ref" : "AWS::Region" },
+                                                    " --network-interface-id ", { "Ref" : "NetworkInterfaceNatGw1" },
+                                                    " --instance-id $(curl -s http://169.254.169.254/latest/meta-data/instance-id)",
+                                                    " --device-index 1"
+                                                    ] ] }
+                },
+              "20_DisableEth0" : {
+                "command" :  "sleep 20 ; ifdown eth0" 
+              },
+              "30_ConfigureMasqueradeAndForwarding" : {
+                "command" : "iptables -t nat -A POSTROUTING -j MASQUERADE ; iptables -A FORWARD -j ACCEPT ; echo 1 > /proc/sys/net/ipv4/ip_forward" 
+              }
+            }
+          },
+          "CloudWatch" : {
+            "files" : {
+              "/usr/local/bin/cloudwatch_nat_stats.sh" : {
+                "content" : { "Fn::Join": [ "", [
+                  "#!/bin/bash\n",
+                  "CONNECTIONS=$(</proc/net/ip_conntrack)\n",
+                  "TOTAL=$(echo \"$CONNECTIONS\" | wc -l)\n",
+                  "TCP=$(echo \"$CONNECTIONS\" | grep \"^tcp\" | wc -l)\n",
+                  "UDP=$(echo \"$CONNECTIONS\" | grep \"^udp\" | wc -l)\n",
+                  "aws cloudwatch put-metric-data --region \"", { "Ref" : "AWS::Region" } ,"\" --namespace \"NAT\" --dimensions \"InstanceId\"=$(</tmp/InstanceId) --metric-name \"TotalConnections\" --value $TOTAL\n",
+                  "aws cloudwatch put-metric-data --region \"", { "Ref" : "AWS::Region" } ,"\" --namespace \"NAT\" --dimensions \"InstanceId\"=$(</tmp/InstanceId) --metric-name \"TcpConnections\" --value $TCP\n",
+                  "aws cloudwatch put-metric-data --region \"", { "Ref" : "AWS::Region" } ,"\" --namespace \"NAT\" --dimensions \"InstanceId\"=$(</tmp/InstanceId) --metric-name \"UdpConnections\" --value $UDP"
+                ]]},
+                "mode"  : "000500",
+                "owner" : "root",
+                "group" : "root"
+              },
+              "/etc/cron.d/cloudwatch_nat_stats" : {
+                "content" : "* * * * * root /usr/local/bin/cloudwatch_nat_stats.sh\n",
+                "mode"  : "000444",
+                "owner" : "root",
+                "group" : "root"
+              }
+            },
+            "commands" : {
+              "10_GetInstanceId" : { 
+                "command" : "curl -s http://169.254.169.254/latest/meta-data/instance-id > /tmp/InstanceId"
+              }
+            }
+          }
+        }
+      },
       "Properties" : {
         "IamInstanceProfile" : { "Ref" : "InstanceProfileNatGw" },
         "ImageId" : { "Fn::FindInMap" : [ "NatGwImageId" , { "Ref" : "AWS::Region" }, "ImageId" ] }, 
         "InstanceType" : { "Ref" : "InstanceType" },
-        "KeyName" : "jjk3@nimbusscale",
+        "KeyName" : { "Fn::If" : [ "UseSSHKey" , { "Ref" : "KeyName" }, {"Ref" : "AWS::NoValue"} ] }, 
         "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
-                        "#!/bin/bash\n",
-                        "/usr/bin/aws ec2 attach-network-interface --region ", { "Ref" : "AWS::Region" },
-                                                                 " --network-interface-id ", { "Ref" : "NetworkInterfaceNatGw1" },
-                                                                 " --instance-id $(curl -s http://169.254.169.254/latest/meta-data/instance-id)",
-                                                                 " --device-index 1\n",
-                        "sleep 30\n",
-                        "ifdown eth0\n",
-                        "iptables -t nat -A POSTROUTING -j MASQUERADE\n",
-                        "iptables -A FORWARD -j ACCEPT\n",
-                        "echo 1 > /proc/sys/net/ipv4/ip_forward\n"
+                        "#!/bin/bash -xe\n",
+                        "yum update -y aws-cfn-bootstrap\n",
+                        "/opt/aws/bin/cfn-init -v ",
+                        "         --stack ", { "Ref" : "AWS::StackName" },
+                        "         --resource LaunchConfigurationNatGw1 ",
+                        "         --configsets NatGwConfig ",
+                        "         --region ", { "Ref" : "AWS::Region" } 
                       ]]}}
         }
       },
+
+   "LaunchConfigurationNatGw2" : {
+      "Type" : "AWS::AutoScaling::LaunchConfiguration",
+      "Metadata" : {
+        "AWS::CloudFormation::Init" : {
+          "configSets" : {
+            "NatGwConfig" : [ "install_cfn", "NetworkInterfaceConfig", "CloudWatch" ],
+            "Update" : [ "CloudWatch" ]
+          },
+          "install_cfn" : {
+            "files": {
+              "/etc/cfn/cfn-hup.conf": {
+                "content": { "Fn::Join": [ "", [
+                  "[main]\n",
+                  "stack=", { "Ref": "AWS::StackId" }, "\n",
+                  "region=", { "Ref": "AWS::Region" }, "\n"
+                ]]},
+                "mode"  : "000400",
+                "owner" : "root",
+                "group" : "root"
+              },
+              "/etc/cfn/hooks.d/cfn-auto-reloader.conf": {
+                "content": { "Fn::Join": [ "", [
+                  "[cfn-auto-reloader-hook]\n",
+                  "triggers=post.update\n",
+                  "path=Resources.LaunchConfigurationNatGw2.Metadata.AWS::CloudFormation::Init\n",
+                  "action=/opt/aws/bin/cfn-init -v ",
+                          "         --stack ", { "Ref" : "AWS::StackName" },
+                          "         --resource LaunchConfigurationNatGw2 ",
+                          "         --configsets Update ",
+                          "         --region ", { "Ref" : "AWS::Region" }, "\n"
+                ]]},
+                "mode"  : "000400",
+                "owner" : "root",
+                "group" : "root"
+              }
+            },
+            "services" : {
+              "sysvinit" : {
+                "cfn-hup" : { "enabled" : "true", "ensureRunning" : "true",
+                              "files" : ["/etc/cfn/cfn-hup.conf", "/etc/cfn/hooks.d/cfn-auto-reloader.conf"]}
+              }
+            }
+          },
+          "NetworkInterfaceConfig" : {
+            "commands" : {
+              "10_AttachNetworkInterface" : {
+                "command" : { "Fn::Join" : ["", [ "/usr/bin/aws ec2 attach-network-interface --region ", { "Ref" : "AWS::Region" },
+                                                    " --network-interface-id ", { "Ref" : "NetworkInterfaceNatGw2" },
+                                                    " --instance-id $(curl -s http://169.254.169.254/latest/meta-data/instance-id)",
+                                                    " --device-index 1"
+                                                    ] ] }
+                },
+              "20_DisableEth0" : {
+                "command" :  "sleep 20 ; ifdown eth0"
+              },
+              "30_ConfigureMasqueradeAndForwarding" : {
+                "command" : "iptables -t nat -A POSTROUTING -j MASQUERADE ; iptables -A FORWARD -j ACCEPT ; echo 1 > /proc/sys/net/ipv4/ip_forward"
+              }
+            }
+          },
+          "CloudWatch" : {
+            "files" : {
+              "/usr/local/bin/cloudwatch_nat_stats.sh" : {
+                "content" : { "Fn::Join": [ "", [
+                  "#!/bin/bash\n",
+                  "CONNECTIONS=$(</proc/net/ip_conntrack)\n",
+                  "TOTAL=$(echo \"$CONNECTIONS\" | wc -l)\n",
+                  "TCP=$(echo \"$CONNECTIONS\" | grep \"^tcp\" | wc -l)\n",
+                  "UDP=$(echo \"$CONNECTIONS\" | grep \"^udp\" | wc -l)\n",
+                  "aws cloudwatch put-metric-data --region \"", { "Ref" : "AWS::Region" } ,"\" --namespace \"NAT\" --dimensions \"InstanceId\"=$(</tmp/InstanceId) --metric-name \"TotalConnections\" --value $TOTAL\n",
+                  "aws cloudwatch put-metric-data --region \"", { "Ref" : "AWS::Region" } ,"\" --namespace \"NAT\" --dimensions \"InstanceId\"=$(</tmp/InstanceId) --metric-name \"TcpConnections\" --value $TCP\n",
+                  "aws cloudwatch put-metric-data --region \"", { "Ref" : "AWS::Region" } ,"\" --namespace \"NAT\" --dimensions \"InstanceId\"=$(</tmp/InstanceId) --metric-name \"UdpConnections\" --value $UDP"
+                ]]},
+                "mode"  : "000500",
+                "owner" : "root",
+                "group" : "root"
+              },
+              "/etc/cron.d/cloudwatch_nat_stats" : {
+                "content" : "* * * * * root /usr/local/bin/cloudwatch_nat_stats.sh\n",
+                "mode"  : "000444",
+                "owner" : "root",
+                "group" : "root"
+              }
+            },
+            "commands" : {
+              "10_GetInstanceId" : {
+                "command" : "curl -s http://169.254.169.254/latest/meta-data/instance-id > /tmp/InstanceId"
+              }
+            }
+          }
+        }
+      },
+      "Condition" : "DualNatGws",
+      "Properties" : {
+        "IamInstanceProfile" : { "Ref" : "InstanceProfileNatGw" },
+        "ImageId" : { "Fn::FindInMap" : [ "NatGwImageId" , { "Ref" : "AWS::Region" }, "ImageId" ] },
+        "InstanceType" : { "Ref" : "InstanceType" },
+        "KeyName" : { "Fn::If" : [ "UseSSHKey" , { "Ref" : "KeyName" }, {"Ref" : "AWS::NoValue"} ] },
+        "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
+                        "#!/bin/bash -xe\n",
+                        "yum update -y aws-cfn-bootstrap\n",
+                        "/opt/aws/bin/cfn-init -v ",
+                        "         --stack ", { "Ref" : "AWS::StackName" },
+                        "         --resource LaunchConfigurationNatGw2 ",
+                        "         --configsets NatGwConfig ",
+                        "         --region ", { "Ref" : "AWS::Region" }
+                      ]]}}
+
+        }
+      },
+
     
-    "AutoScalingGroupNatGw" : {
+    "AutoScalingGroupNatGw1" : {
       "Type" : "AWS::AutoScaling::AutoScalingGroup",
       "Properties" : {
-        "LaunchConfigurationName" : { "Ref" : "LaunchConfigurationNatGw" },
+        "LaunchConfigurationName" : { "Ref" : "LaunchConfigurationNatGw1" },
         "MaxSize" : "1",
         "MinSize" : "1",
-        "VPCZoneIdentifier" : [ { "Ref" : "SubnetIdPublic1" } ],
+        "VPCZoneIdentifier" :  [ { "Fn::Select" : [ "0" , { "Ref" : "PublicSubnetIds" } ] } ],
         "Tags" : [ { "Key" : "Name",
                      "Value" : { "Fn::Join" : [ "", [ { "Ref" : "Prefix" }, "NatGw1" ] ] },
                      "PropagateAtLaunch" : "true"
@@ -186,6 +462,23 @@
                  ]
         },
         "DependsOn" : "NetworkInterfaceNatGw1"
+      },
+
+    "AutoScalingGroupNatGw2" : {
+      "Type" : "AWS::AutoScaling::AutoScalingGroup",
+      "Condition" : "DualNatGws",
+      "Properties" : {
+        "LaunchConfigurationName" : { "Ref" : "LaunchConfigurationNatGw2" },
+        "MaxSize" : "1",
+        "MinSize" : "1",
+        "VPCZoneIdentifier" :  [ { "Fn::Select" : [ "1" , { "Ref" : "PublicSubnetIds" } ] } ],
+        "Tags" : [ { "Key" : "Name",
+                     "Value" : { "Fn::Join" : [ "", [ { "Ref" : "Prefix" }, "NatGw2" ] ] },
+                     "PropagateAtLaunch" : "true"
+                   }
+                 ]
+        },
+        "DependsOn" : "NetworkInterfaceNatGw2"
       }
   }
 }
