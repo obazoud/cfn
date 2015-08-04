@@ -5,13 +5,10 @@
 
   "Parameters" : {
     "Prefix" : {
-      "Default" : "CFN.",
-      "Description" : "The prefix for the name tags of all the created resources.",
+      "Default" : "",
+      "Description" : "The prefix for the names of all created resources. If one is not specified then one will not be used.",
       "Type" : "String",
-      "MinLength" : "1",
-      "MaxLength" : "64",
-      "AllowedPattern" : "[a-zA-Z0-9][a-zA-Z0-9\\.\\-\\_]*",
-      "ConstraintDescription" : "must start with an alphanumeric character and contain alphanumeric characters and '.', '-' or '_'."
+      "MaxLength" : "64"
     },
 
     "VpcIpPrefix" : {
@@ -255,6 +252,17 @@
       }
     },
 
+    "StackNetworkCloudWatch" : {
+      "Type" : "AWS::CloudFormation::Stack",
+      "Properties" : {
+        "TemplateURL" : { "Fn::Join" : [ "", [
+                                        "https://s3-", { "Ref" : "AWS::Region" }, ".amazonaws.com/",
+                                        { "Ref" : "TemplateBucket" }, "/network-cloudwatch.json"
+                                       ] ] },
+        "TimeoutInMinutes" : "2"
+      }
+    },
+
     "StackNatGw" : {
       "Type" : "AWS::CloudFormation::Stack",
       "Condition" : "DeployNat",
@@ -270,7 +278,8 @@
                                                         { "Ref" : "SubnetNat2" } ] 
                                                         ] },
                          "NatStrategy" : { "Ref" : "NatStrategy" },
-                         "KeyName" : { "Ref": "KeyName" }
+                         "KeyName" : { "Ref": "KeyName" },
+                         "LogGroupName" : { "Fn::GetAtt" : [ "StackNetworkCloudWatch", "Outputs.LogGroupName" ] }
                        },
         "TemplateURL" : { "Fn::Join" : [ "", [
                                         "https://s3-", { "Ref" : "AWS::Region" }, ".amazonaws.com/",

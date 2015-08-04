@@ -5,13 +5,10 @@
 
   "Parameters" : {
     "Prefix" : {
-      "Default" : "CFN.",
-      "Description" : "The prefix for The names of all created resources",
+      "Default" : "",
+      "Description" : "The prefix for the names of all created resources. If one is not specified then one will not be used.",
       "Type" : "String",
-      "MinLength" : "1",
-      "MaxLength" : "64",
-      "AllowedPattern" : "[a-zA-Z0-9][a-zA-Z0-9\\.\\-\\_]*",
-      "ConstraintDescription" : "must start with an alphanumeric character and contain alphanumeric characters and '.', '-' or '_'."
+      "MaxLength" : "64"
     },
 
   "InstanceType" : {
@@ -46,11 +43,19 @@
 
     "KeyName" : {
       "Default" : "",
-      "Description" : "Name of an SSH keypair which will be used for network related instances, such as NatGws and VpnGws. If one is not specified than the instances will be launched without one (i.e. No SSH access).",
+      "Description" : "Name of an SSH keypair which will be used for network related instances, such as NatGws and VpnGws. If one is not specified then the instances will be launched without one (i.e. No SSH access).",
       "Type" : "String",
       "MaxLength" : "255"
+    },
+
+    "LogGroupName" : {
+      "Default" : "NatGw",
+      "Description" : "name of the log group that will be used by the CloudWatch log agents installed on the NatGws. If one is not specified then one named NatGw will be created.",
+      "Type" : "String",
+      "MaxLength" : "512"
     }
   },
+
 
   "Mappings" : { 
     "NatGwImageId" : {
@@ -211,7 +216,12 @@
             "Version": "2012-10-17",
             "Statement": [ {
               "Effect": "Allow",
-              "Action": [ "ec2:AttachNetworkInterface", "cloudwatch:PutMetricData" ],
+              "Action": [ "ec2:AttachNetworkInterface", 
+                          "cloudwatch:PutMetricData",
+                          "logs:CreateLogGroup",
+                          "logs:CreateLogStream",
+                          "logs:PutLogEvents"
+                        ],
               "Resource": "*"
             } ] 
           }
@@ -276,7 +286,8 @@
                 "command" : { "Fn::Join" : ["", [ "/usr/bin/aws ec2 attach-network-interface --region ", { "Ref" : "AWS::Region" },
                                                     " --network-interface-id ", { "Ref" : "NetworkInterfaceNatGw1" },
                                                     " --instance-id $(curl -s http://169.254.169.254/latest/meta-data/instance-id)",
-                                                    " --device-index 1"
+                                                    " --device-index 1\n",
+                                                    "logger \"attached network-interface ", { "Ref" : "NetworkInterfaceNatGw1" }, "\""
                                                     ] ] }
                 },
               "20_DisableEth0" : {
@@ -284,6 +295,9 @@
               },
               "30_ConfigureMasqueradeAndForwarding" : {
                 "command" : "iptables -t nat -A POSTROUTING -j MASQUERADE ; iptables -A FORWARD -j ACCEPT ; echo 1 > /proc/sys/net/ipv4/ip_forward" 
+              },
+              "40_ReconfigNTPforEth1" : {
+                "command" : "sed -i 's/eth0/eth1/' /etc/ntp.conf ; service ntpd restart"
               }
             }
           },
@@ -309,11 +323,30 @@
                 "mode"  : "000444",
                 "owner" : "root",
                 "group" : "root"
+              },
+              "/etc/CloudWatchLogAgent.conf" : {
+                "content" : { "Fn::Join": [ "", [
+                  "[general]\n",
+                  "state_file = /var/awslogs/state/agent-state\n",
+                  "[/var/log/messages]\n",
+                  "log_group_name = ", { "Ref" : "LogGroupName" }, "\n", 
+                  "log_stream_name = {instance_id}\n",
+                  "file = /var/log/messages\n"
+                ]]},
+                "mode" : "000400",
+                "owner" : "root",
+                "group" : "root"
               }
             },
             "commands" : {
               "10_GetInstanceId" : { 
                 "command" : "curl -s http://169.254.169.254/latest/meta-data/instance-id > /tmp/InstanceId"
+              },
+              "20_InstallCloudWatchLogAgent" : {
+                "command" : { "Fn::Join": [ "", [
+                              "wget https://s3.amazonaws.com/aws-cloudwatch/downloads/latest/awslogs-agent-setup.py\n",
+                              "python awslogs-agent-setup.py -n -r ", { "Ref" : "AWS::Region" }, " -c /etc/CloudWatchLogAgent.conf"
+                            ] ] }
               }
             }
           }

@@ -5,13 +5,10 @@
 
   "Parameters" : {
     "Prefix" : {
-      "Default" : "CFN.",
-      "Description" : "The prefix for The names of all created resources",
+      "Default" : "",
+      "Description" : "The prefix for the names of all created resources. If one is not specified then one will not be used.",
       "Type" : "String",
-      "MinLength" : "1",
-      "MaxLength" : "64",
-      "AllowedPattern" : "[a-zA-Z0-9][a-zA-Z0-9\\.\\-\\_]*",
-      "ConstraintDescription" : "must start with an alphanumeric character and contain alphanumeric characters and '.', '-' or '_'."
+      "MaxLength" : "64"
     },
     "VpcId" : {
       "Description" : "The VPC which the security groups will belong",
